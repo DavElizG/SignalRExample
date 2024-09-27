@@ -1,0 +1,29 @@
+[33mcommit f91fd17b52c177ec799049fa984ca58a0527c7f5[m[33m ([m[1;36mHEAD -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Jose David Guadamuz <jose.guadamuz.elizondo@est.una.ac.cr>
+Date:   Thu Sep 26 21:50:45 2024 -0600
+
+    Añadir soporte para mensajes dirigidos y configurar CORS
+    
+    Se ha añadido un nuevo campo `Recipient` a la clase `ChatMessage` en el archivo `ChatMessage.cs`.
+    
+    En el archivo `ChatHub.cs`, se ha modificado el método `SendMessage` para incluir el nuevo parámetro `recipient` y se ha actualizado la lógica para enviar el mensaje tanto al destinatario como al remitente.
+    
+    Se ha añadido un nuevo método `GetMessagesBetweenUsersAsync` a la interfaz `IChatService` en el archivo `IChatService.cs`.
+    
+    En el archivo `ChatService.cs`, se ha implementado el nuevo método `GetMessagesBetweenUsersAsync` para obtener los mensajes entre dos usuarios específicos.
+    
+    En el archivo `ChatController.cs`, se ha modificado el método `GetMessages` para aceptar parámetros `user` y `recipient`, y se ha actualizado el método `SendMessage` para incluir validaciones adicionales y enviar el mensaje tanto al destinatario como al remitente.
+    
+    En el archivo `Program.cs`, se ha configurado CORS para permitir solicitudes desde un origen específico (`http://localhost:5173`) y se ha añadido la política de CORS al pipeline de la aplicación.
+
+[33mcommit 763521cc480d63a062a927c0b74f60842894a3f3[m
+Author: Jose David Guadamuz <jose.guadamuz.elizondo@est.una.ac.cr>
+Date:   Thu Sep 26 17:59:53 2024 -0600
+
+    Agregar archivos de proyecto.
+
+[33mcommit af97cc71c1944f995d81e460085ece3b6c9f2d9b[m
+Author: Jose David Guadamuz <jose.guadamuz.elizondo@est.una.ac.cr>
+Date:   Thu Sep 26 17:59:50 2024 -0600
+
+    Agregar .gitattributes y .gitignore.
