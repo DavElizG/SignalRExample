@@ -3,8 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Services.Hubs;
 using Services.Interfaces;
-
-// For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace SignalR.Controllers
 {
@@ -21,24 +21,25 @@ namespace SignalR.Controllers
             _hubContext = hubContext;
         }
 
-
-        [HttpGet]
-        public async Task<IEnumerable<ChatMessage>> GetMessages()
+        [HttpGet("{user}/{recipient}")]
+        public async Task<IEnumerable<ChatMessage>> GetMessages(string user, string recipient)
         {
-            return await _chatService.GetMessagesAsync();
+            return await _chatService.GetMessagesBetweenUsersAsync(user, recipient);
         }
 
         [HttpPost]
         public async Task<IActionResult> SendMessage([FromBody] ChatMessage message)
         {
-            if (message == null || string.IsNullOrEmpty(message.User) || string.IsNullOrEmpty(message.Message))
+            if (message == null || string.IsNullOrEmpty(message.User) || string.IsNullOrEmpty(message.Recipient) || string.IsNullOrEmpty(message.Message))
             {
                 return BadRequest("Invalid message.");
             }
 
+            message.Id = 0; // Asegúrate de que el Id sea 0 para que se genere automáticamente
             message.Timestamp = DateTime.UtcNow;
             await _chatService.AddMessageAsync(message);
-            await _hubContext.Clients.All.SendAsync("ReceiveMessage", message.User, message.Message);
+            await _hubContext.Clients.User(message.Recipient).SendAsync("ReceiveMessage", message.User, message.Message);
+            await _hubContext.Clients.User(message.User).SendAsync("ReceiveMessage", message.User, message.Message); // Para que el remitente también reciba el mensaje
 
             return Ok(message);
         }

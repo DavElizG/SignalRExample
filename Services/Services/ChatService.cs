@@ -1,10 +1,8 @@
 ﻿using DataAcces.Entities;
 using Microsoft.EntityFrameworkCore;
 using Services.Interfaces;
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using DataAcces.Data;
 
@@ -22,6 +20,13 @@ namespace Services.Services
         public async Task<IEnumerable<ChatMessage>> GetMessagesAsync()
         {
             return await _context.ChatMessages.ToListAsync();
+        }
+
+        public async Task<IEnumerable<ChatMessage>> GetMessagesBetweenUsersAsync(string user, string recipient)
+        {
+            return await _context.ChatMessages
+                .Where(m => (m.User == user && m.Recipient == recipient) || (m.User == recipient && m.Recipient == user))
+                .ToListAsync();
         }
 
         public async Task AddMessageAsync(ChatMessage message)
