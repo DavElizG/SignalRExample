@@ -12,7 +12,7 @@ builder.Services.AddDbContext<ChatMessagesContext>(options =>
 
 builder.Services.AddScoped<IChatService, ChatService>();
 
-// Agregar servicios al contenedor.
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -23,12 +23,12 @@ builder.Services.AddSignalR();
 // Configurar CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", // Cambié el nombre de la política a "AllowAll"
+    options.AddPolicy("AllowAll",
         policyBuilder => policyBuilder
-            .WithOrigins("http://localhost:5173") 
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials());
+            .WithOrigins("http://localhost:5173") // Permite que el frontend (en este origen) se conecte al backend usando SignalR
+            .AllowAnyMethod()                     // Permite todos los métodos necesarios para SignalR
+            .AllowAnyHeader()                     
+            .AllowCredentials());                 
 });
 
 var app = builder.Build();
@@ -44,9 +44,9 @@ app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
-app.UseCors("AllowAll"); // Asegúrate de que estás usando la política correcta ("AllowAll")
+app.UseCors("AllowAll"); 
 
 app.MapControllers();
-app.MapHub<ChatHub>("/chathub"); // Asegúrate de que este endpoint esté correctamente configurado
+app.MapHub<ChatHub>("/chathub"); 
 
 app.Run();
