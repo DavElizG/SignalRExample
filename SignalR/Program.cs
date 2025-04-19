@@ -4,6 +4,8 @@ using Services.Hubs;
 using Services.Interfaces;
 using Services.Services;
 using System.Diagnostics;
+using System.Net;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,32 +46,51 @@ builder.Services.AddDbContext<ChatMessagesContext>((provider, options) => {
 builder.Services.AddScoped<IChatService, ChatService>();
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    // Configurar las opciones de serialización JSON
+    options.JsonSerializerOptions.PropertyNamingPolicy = null;
+    options.JsonSerializerOptions.WriteIndented = true;
+});
+
 builder.Services.AddEndpointsApiExplorer();
 
-// Habilitar Swagger según la variable de entorno
-bool enableSwagger = true;
-if (bool.TryParse(Environment.GetEnvironmentVariable("ENABLE_SWAGGER"), out bool swaggerEnabled))
-{
-    enableSwagger = swaggerEnabled;
-}
-
-if (enableSwagger)
-{
-    builder.Services.AddSwaggerGen();
-}
+// Habilitar Swagger en todos los entornos, incluido Production
+builder.Services.AddSwaggerGen();
 
 builder.Services.AddSignalR();
 
+// Aumentar el nivel de logging
+builder.Logging.AddConsole().SetMinimumLevel(LogLevel.Debug);
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? app.Environment.EnvironmentName;
-if (environment.Equals("Development", StringComparison.OrdinalIgnoreCase) && enableSwagger)
+// Middleware de manejo de excepciones personalizado
+app.UseExceptionHandler(appError =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    appError.Run(async context =>
+    {
+        context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+        context.Response.ContentType = "application/json";
+        
+        var contextFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+        if (contextFeature != null)
+        {
+            Console.WriteLine($"Error Global: {contextFeature.Error}");
+            
+            await context.Response.WriteAsync(JsonSerializer.Serialize(new
+            {
+                StatusCode = context.Response.StatusCode,
+                Message = "Error interno del servidor.",
+                Detail = app.Environment.IsDevelopment() ? contextFeature.Error.ToString() : "Ver logs para más detalles"
+            }));
+        }
+    });
+});
+
+// Habilitar Swagger en todos los entornos, incluido Production
+app.UseSwagger();
+app.UseSwaggerUI();
 
 // Solo redirigir a HTTPS si no estamos en un contenedor Docker
 if (!string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase))
@@ -84,6 +105,10 @@ app.UseCors("AllowAll");
 
 app.MapControllers();
 app.MapHub<ChatHub>("/chathub");
+
+// Obtener el entorno actual
+var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? app.Environment.EnvironmentName;
+Console.WriteLine($"Entorno de ejecución: {environment}");
 
 // Aplicar migraciones al inicio si estamos en entorno Development o si se especifica en una variable
 var shouldMigrate = environment.Equals("Development", StringComparison.OrdinalIgnoreCase);
@@ -133,4 +158,5 @@ if (shouldMigrate)
     }
 }
 
+Console.WriteLine("Aplicación iniciada y lista para recibir solicitudes.");
 app.Run();
