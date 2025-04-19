@@ -252,5 +252,76 @@ namespace SignalR.Controllers
                 });
             }
         }
+
+        // Endpoint para obtener mensajes globales
+        [HttpGet("broadcast")]
+        public async Task<IActionResult> GetBroadcastMessages([FromQuery] int limit = 50)
+        {
+            try
+            {
+                _logger.LogInformation($"Solicitando últimos {limit} mensajes globales");
+                
+                var messages = await _chatService.GetBroadcastMessagesAsync(limit);
+                
+                return Ok(messages);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al obtener mensajes globales");
+                return StatusCode(500, new { 
+                    success = false, 
+                    message = "Error al obtener mensajes globales", 
+                    error = ex.Message 
+                });
+            }
+        }
+
+        // Endpoint para enviar mensaje global desde la API REST
+        [HttpPost("broadcast")]
+        public async Task<IActionResult> SendBroadcastMessage([FromBody] BroadcastMessageRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(request.User) || string.IsNullOrEmpty(request.Message))
+                {
+                    return BadRequest(new { success = false, message = "User y Message son obligatorios" });
+                }
+                
+                _logger.LogInformation($"Enviando mensaje global de {request.User}");
+                
+                // Crear el mensaje
+                var chatMessage = new ChatMessage
+                {
+                    User = request.User,
+                    Recipient = "BROADCAST",
+                    Message = request.Message,
+                    Timestamp = DateTime.UtcNow
+                };
+                
+                // Guardar en base de datos
+                await _chatService.AddMessageAsync(chatMessage);
+                
+                // Notificar a todos los clientes conectados
+                await _hubContext.Clients.All.SendAsync("ReceiveBroadcastMessage", request.User, request.Message, chatMessage.Timestamp);
+                
+                return Ok(new { 
+                    success = true, 
+                    message = "Mensaje global enviado correctamente", 
+                    data = chatMessage 
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error al enviar mensaje global: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Error al enviar mensaje global", error = ex.Message });
+            }
+        }
+    }
+
+    // Clase para el request de mensaje broadcast
+    public class BroadcastMessageRequest
+    {
+        public string User { get; set; }
+        public string Message { get; set; }
     }
 }

@@ -142,5 +142,43 @@ namespace Services.Services
                 throw;
             }
         }
+
+        public async Task<IEnumerable<ChatMessage>> GetBroadcastMessagesAsync(int limit = 50)
+        {
+            try
+            {
+                _logger.LogInformation($"Obteniendo los últimos {limit} mensajes globales");
+
+                // Verificar la conexión
+                if (_context.Database.GetDbConnection().State != System.Data.ConnectionState.Open)
+                {
+                    _logger.LogInformation("Conexión cerrada, intentando abrir...");
+                    await _context.Database.OpenConnectionAsync();
+                }
+
+                // Obtener mensajes globales (marcados con BROADCAST)
+                var query = _context.ChatMessages
+                    .AsNoTracking()
+                    .Where(m => m.Recipient == "BROADCAST")
+                    .OrderByDescending(m => m.Timestamp)
+                    .Take(limit);
+
+                _logger.LogInformation($"SQL Query: {query.ToQueryString()}");
+
+                var messages = await query.ToListAsync();
+                // Invertimos para obtenerlos en orden cronológico después de limitar
+                messages = messages.OrderBy(m => m.Timestamp).ToList();
+
+                _logger.LogInformation($"Encontrados {messages.Count} mensajes globales");
+                return messages;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al obtener mensajes globales");
+                
+                // Devolver lista vacía en caso de error para diagnóstico
+                return new List<ChatMessage>();
+            }
+        }
     }
 }
