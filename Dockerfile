@@ -6,6 +6,8 @@ WORKDIR /src
 COPY ["SignalR/SignalR.csproj", "SignalR/"]
 COPY ["DataAcces/DataAcces.csproj", "DataAcces/"]
 COPY ["Services/Services.csproj", "Services/"]
+
+# Restore dependencies
 RUN dotnet restore "SignalR/SignalR.csproj"
 
 # Copy all files and build
@@ -22,9 +24,15 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 
-# Set environment variables
+# Set default environment variables for production
 ENV ASPNETCORE_URLS=http://+:80
 ENV ASPNETCORE_ENVIRONMENT=Production
+ENV DOTNET_RUNNING_IN_CONTAINER=true
+ENV ENABLE_SWAGGER=false
+ENV APPLY_MIGRATIONS=true
+
+# No hard-coding sensitive connection strings in the image
+# Use --env-file .env or -e option when running the container
 
 EXPOSE 80
 EXPOSE 443

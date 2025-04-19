@@ -1,0 +1,31 @@
+# Archivos y carpetas generados
+**/bin/
+**/obj/
+**/out/
+**/.vs/
+**/.vscode/
+**/.idea/
+
+# Archivos de desarrollo
+**/*.user
+**/*.userosscache
+**/*.dbmdl
+**/*.jfm
+
+# Archivos de entorno local que no deben estar en el contenedor
+.env
+.env.local
+.env.development
+
+# Otros archivos que no son necesarios en el contenedor
+README.md
+LICENSE
+*.md
+**/.git/
+.gitignore
+.gitattributes
+
+# Archivos de Docker (evita copiarlos de nuevo)
+Dockerfile
+.dockerignore
+docker-compose*.yml

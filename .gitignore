@@ -361,3 +361,23 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Environment files with sensitive data
+.env
+.env.local
+.env.development
+.env.production
+
+# Docker specific files that might contain sensitive data
+docker-compose.override.yml
+
+# Visual Studio Code workspace settings
+.vscode/
+*.code-workspace
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# Docker Volume data
+data/
