@@ -317,11 +317,4 @@ namespace SignalR.Controllers
             }
         }
     }
-
-    // Clase para el request de mensaje broadcast
-    public class BroadcastMessageRequest
-    {
-        public string User { get; set; }
-        public string Message { get; set; }
-    }
 }
