@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Services.Hubs;
 using Services.Interfaces;
+using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace SignalR.Controllers
@@ -23,41 +25,50 @@ namespace SignalR.Controllers
             _logger = logger;
         }
 
+        // Método simplificado para diagnosticar el problema
         [HttpGet("{user}/{recipient}")]
         public async Task<IActionResult> GetMessages(string user, string recipient)
         {
             try
             {
-                _logger.LogInformation($"Obteniendo mensajes entre {user} y {recipient}");
+                _logger.LogInformation($"Inicio: Obteniendo mensajes entre {user} y {recipient}");
                 
-                // Crear un token de cancelación con timeout de 10 segundos
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                
-                // Pasar el token de cancelación a la tarea
-                var messages = await _chatService.GetMessagesBetweenUsersAsync(user, recipient)
-                    .ContinueWith(t => 
-                    {
-                        if (t.IsFaulted)
-                        {
-                            _logger.LogError(t.Exception, $"Error en GetMessagesBetweenUsersAsync: {t.Exception?.Message}");
-                            throw t.Exception ?? new Exception("Unknown error occurred");
-                        }
-                        return t.Result;
-                    }, cts.Token);
+                // Validar parámetros de entrada
+                if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(recipient))
+                {
+                    _logger.LogWarning("Parámetros inválidos: user o recipient están vacíos");
+                    return BadRequest(new { success = false, message = "Los parámetros user y recipient son obligatorios" });
+                }
+
+                // Usar un try-catch específico para las operaciones de base de datos
+                IEnumerable<ChatMessage> messages;
+                try
+                {
+                    // Simplificar la llamada al servicio para minimizar puntos de falla
+                    messages = await _chatService.GetMessagesBetweenUsersAsync(user, recipient);
+                }
+                catch (Exception dbEx)
+                {
+                    _logger.LogError(dbEx, $"Error de base de datos: {dbEx.Message}");
+                    return StatusCode(500, new { 
+                        success = false, 
+                        message = "Error al recuperar mensajes de la base de datos", 
+                        errorDetails = dbEx.Message 
+                    });
+                }
                 
                 // Si llegamos aquí, la operación fue exitosa
-                _logger.LogInformation($"Se encontraron {messages.Count()} mensajes entre {user} y {recipient}");
-                return Ok(new { success = true, data = messages, count = messages.Count() });
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning($"Timeout al obtener mensajes entre {user} y {recipient}");
-                return StatusCode(504, new { success = false, message = "La operación ha tardado demasiado tiempo en completarse" });
+                _logger.LogInformation($"Éxito: Obteniendo mensajes entre {user} y {recipient}");
+                return Ok(new { success = true, data = messages });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error al obtener mensajes entre {user} y {recipient}");
-                return StatusCode(500, new { success = false, message = "Error al obtener mensajes", error = ex.Message });
+                _logger.LogError(ex, $"Error general al obtener mensajes entre {user} y {recipient}: {ex.Message}");
+                return StatusCode(500, new { 
+                    success = false, 
+                    message = "Error al procesar la solicitud", 
+                    errorDetails = ex.Message 
+                });
             }
         }
 

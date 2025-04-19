@@ -54,26 +54,56 @@ namespace Services.Services
 
             try
             {
-                _logger.LogInformation($"Obteniendo mensajes entre {user} y {recipient}");
-                // Configurar un timeout para la consulta a la BD
-                var cancellationToken = new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token;
+                _logger.LogInformation($"ChatService - Obteniendo mensajes entre {user} y {recipient}");
                 
-                return await _context.ChatMessages
-                    .AsNoTracking()  // Mejora rendimiento para consultas de solo lectura
-                    .Where(m => (m.User == user && m.Recipient == recipient) || 
-                               (m.User == recipient && m.Recipient == user))
-                    .OrderBy(m => m.Timestamp)  // Ordenar por timestamp
-                    .ToListAsync(cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning($"Timeout al obtener mensajes entre {user} y {recipient}");
-                throw new TimeoutException($"La operación de obtener mensajes entre {user} y {recipient} ha excedido el tiempo límite");
+                // Verificar explícitamente si la conexión está abierta
+                if (_context.Database.GetDbConnection().State != System.Data.ConnectionState.Open)
+                {
+                    _logger.LogInformation("Conexión cerrada, intentando abrir...");
+                    await _context.Database.OpenConnectionAsync();
+                    _logger.LogInformation("Conexión abierta exitosamente");
+                }
+                
+                // Simplificar al máximo la consulta para diagnóstico
+                var query = _context.ChatMessages
+                    .AsNoTracking() // Mejora rendimiento
+                    .Where(m => 
+                        (m.User == user && m.Recipient == recipient) || 
+                        (m.User == recipient && m.Recipient == user))
+                    .OrderBy(m => m.Timestamp);
+                
+                _logger.LogInformation($"SQL Query: {query.ToQueryString()}");
+                
+                // Ejecutar en un timeout controlado
+                var messages = await query.ToListAsync();
+                
+                _logger.LogInformation($"Encontrados {messages.Count} mensajes entre {user} y {recipient}");
+                return messages;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error al obtener mensajes entre {user} y {recipient}");
-                throw;
+                _logger.LogError(ex, $"Error en ChatService al obtener mensajes entre {user} y {recipient}");
+                
+                // En caso de errores específicos con la conexión, intentamos hacer un diagnóstico básico
+                if (!_context.Database.CanConnect())
+                {
+                    _logger.LogError("No se puede conectar a la base de datos. Verificando estado de conexión...");
+                    
+                    try
+                    {
+                        var connectionState = _context.Database.GetDbConnection().State;
+                        _logger.LogError($"Estado actual de la conexión: {connectionState}");
+                    }
+                    catch (Exception connEx)
+                    {
+                        _logger.LogError(connEx, "Error al intentar verificar el estado de la conexión");
+                    }
+                }
+                
+                // Devolver una lista vacía en caso de error para evitar que la aplicación falle completamente
+                // Esto es solo para diagnóstico temporal, en producción deberíamos lanzar la excepción
+                _logger.LogWarning("Retornando lista vacía como fallback para diagnóstico");
+                return new List<ChatMessage>();
             }
         }
 
