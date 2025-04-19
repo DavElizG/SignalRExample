@@ -14,6 +14,7 @@ namespace Services.Services
     {
         private readonly ChatMessagesContext _context;
         private readonly ILogger<ChatService> _logger;
+        private readonly int _messageLimit = 100; // Límite de mensajes a mantener
 
         public ChatService(ChatMessagesContext context, ILogger<ChatService> logger)
         {
@@ -118,10 +119,33 @@ namespace Services.Services
             try
             {
                 _logger.LogInformation($"Añadiendo mensaje de {message.User} a {message.Recipient}");
+                
+                // Configurar un timeout para las operaciones de base de datos
+                var cancellationToken = new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token;
+                
+                // Contar mensajes actuales en la base de datos
+                var messageCount = await _context.ChatMessages.CountAsync(cancellationToken);
+                _logger.LogDebug($"Número actual de mensajes en la base de datos: {messageCount}");
+                
+                // Si alcanzamos el límite, eliminar el mensaje más antiguo
+                if (messageCount >= _messageLimit)
+                {
+                    var oldestMessage = await _context.ChatMessages
+                        .OrderBy(m => m.Timestamp)
+                        .FirstOrDefaultAsync(cancellationToken);
+                    
+                    if (oldestMessage != null)
+                    {
+                        _logger.LogInformation($"Eliminando el mensaje más antiguo (ID: {oldestMessage.Id}) para mantener el límite de {_messageLimit} mensajes");
+                        _context.ChatMessages.Remove(oldestMessage);
+                        // No hacemos SaveChanges aquí, lo haremos después de añadir el nuevo mensaje
+                    }
+                }
+                
+                // Añadir el nuevo mensaje
                 _context.ChatMessages.Add(message);
                 
-                // Configurar un timeout para la operación de guardado
-                var cancellationToken = new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token;
+                // Guardar todos los cambios (eliminación + adición) en una sola transacción
                 await _context.SaveChangesAsync(cancellationToken);
                 
                 _logger.LogInformation($"Mensaje añadido correctamente con ID {message.Id}");

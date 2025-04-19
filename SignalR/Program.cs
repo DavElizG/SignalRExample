@@ -82,9 +82,6 @@ builder.Services.AddDbContext<ChatMessagesContext>((provider, options) => {
 // Configurar los servicios con timeouts y manejo de errores
 builder.Services.AddScoped<IChatService, ChatService>();
 
-// Registrar el servicio de limpieza de mensajes como un servicio en segundo plano
-builder.Services.AddHostedService<MessageCleanupService>();
-
 // Configurar HttpClient con timeouts
 builder.Services.AddHttpClient("Railway", client =>
 {
