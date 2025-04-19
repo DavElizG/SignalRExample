@@ -6,8 +6,20 @@ using Services.Services;
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.Features;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configurar límites de solicitudes HTTP
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxConcurrentConnections = 100;
+    serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+    serverOptions.Limits.MinRequestBodyDataRate = null;
+    serverOptions.Limits.MinResponseDataRate = null;
+    serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
+    serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(1);
+});
 
 // Configurar CORS con origen desde variable de entorno
 var corsOrigins = Environment.GetEnvironmentVariable("CORS_ORIGINS")?.Split(',') 
@@ -23,49 +35,88 @@ builder.Services.AddCors(options =>
             .AllowCredentials());
 });
 
+// Configurar características HTTP para permitir streams más grandes
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartBodyLengthLimit = int.MaxValue;
+    options.MemoryBufferThreshold = int.MaxValue;
+});
+
 // Obtener la cadena de conexión de la variable de entorno o del archivo de configuración
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING") 
     ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
 Console.WriteLine($"Usando la cadena de conexión: {connectionString}");
 
-// Configurar MySQL con reintentos
+// Configurar MySQL con reintentos y timeouts
 builder.Services.AddDbContext<ChatMessagesContext>((provider, options) => {
+    var connectionBuilder = new MySqlConnector.MySqlConnectionStringBuilder(connectionString)
+    {
+        MaximumPoolSize = 10,
+        MinimumPoolSize = 5,
+        ConnectionTimeout = 30,
+        DefaultCommandTimeout = 30,
+        ConnectionIdleTimeout = 300
+    };
+    
+    var enhancedConnectionString = connectionBuilder.ConnectionString;
+    
     options.UseMySql(
-        connectionString,
-        ServerVersion.AutoDetect(connectionString),
+        enhancedConnectionString,
+        ServerVersion.AutoDetect(enhancedConnectionString),
         mySqlOptions => {
             mySqlOptions.EnableRetryOnFailure(
                 maxRetryCount: 5,
                 maxRetryDelay: TimeSpan.FromSeconds(30),
                 errorNumbersToAdd: null);
+            mySqlOptions.CommandTimeout(30);
+            mySqlOptions.MaxBatchSize(100);
         }
     );
+    
+    // Configuración adicional para rendimiento
+    options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 });
 
+// Configurar los servicios con timeouts y manejo de errores
 builder.Services.AddScoped<IChatService, ChatService>();
 
-// Add services to the container.
-builder.Services.AddControllers().AddJsonOptions(options =>
+// Configurar HttpClient con timeouts
+builder.Services.AddHttpClient("Railway", client =>
 {
-    // Configurar las opciones de serialización JSON
-    options.JsonSerializerOptions.PropertyNamingPolicy = null;
-    options.JsonSerializerOptions.WriteIndented = true;
+    client.Timeout = TimeSpan.FromSeconds(30);
 });
+
+// Add services to the container.
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Configurar opciones de JSON
+        options.JsonSerializerOptions.PropertyNamingPolicy = null;
+        options.JsonSerializerOptions.WriteIndented = true;
+    });
 
 builder.Services.AddEndpointsApiExplorer();
 
-// Habilitar Swagger en todos los entornos, incluido Production
+// Habilitar Swagger en todos los entornos
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddSignalR();
+// Configurar SignalR con timeouts aumentados
+builder.Services.AddSignalR(hubOptions =>
+{
+    hubOptions.MaximumReceiveMessageSize = 102400; // 100KB
+    hubOptions.ClientTimeoutInterval = TimeSpan.FromMinutes(2);
+    hubOptions.KeepAliveInterval = TimeSpan.FromSeconds(15);
+    hubOptions.HandshakeTimeout = TimeSpan.FromSeconds(30);
+});
 
 // Aumentar el nivel de logging
 builder.Logging.AddConsole().SetMinimumLevel(LogLevel.Debug);
 
 var app = builder.Build();
 
-// Middleware de manejo de excepciones personalizado
+// Middleware de manejo de excepciones personalizado con mejoras para Railway
 app.UseExceptionHandler(appError =>
 {
     appError.Run(async context =>
@@ -76,19 +127,53 @@ app.UseExceptionHandler(appError =>
         var contextFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
         if (contextFeature != null)
         {
-            Console.WriteLine($"Error Global: {contextFeature.Error}");
+            var error = contextFeature.Error;
+            Console.WriteLine($"Error Global: {error}");
             
-            await context.Response.WriteAsync(JsonSerializer.Serialize(new
+            var errorResponse = new
             {
                 StatusCode = context.Response.StatusCode,
                 Message = "Error interno del servidor.",
-                Detail = app.Environment.IsDevelopment() ? contextFeature.Error.ToString() : "Ver logs para más detalles"
-            }));
+                Detail = app.Environment.IsDevelopment() ? error.ToString() : "Ver logs para más detalles",
+                TraceId = System.Diagnostics.Activity.Current?.Id ?? context.TraceIdentifier,
+                Timestamp = DateTime.UtcNow
+            };
+            
+            await context.Response.WriteAsync(JsonSerializer.Serialize(errorResponse));
         }
     });
 });
 
-// Habilitar Swagger en todos los entornos, incluido Production
+// Middleware para manejar timeouts específicamente
+app.Use(async (context, next) =>
+{
+    var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+    var originalToken = context.RequestAborted;
+    
+    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(originalToken, timeoutCts.Token);
+    context.RequestAborted = linkedCts.Token;
+    
+    try
+    {
+        await next(context);
+    }
+    catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !originalToken.IsCancellationRequested)
+    {
+        Console.WriteLine("Solicitud cancelada por timeout");
+        context.Response.StatusCode = 504; // Gateway Timeout
+        context.Response.ContentType = "application/json";
+        
+        await context.Response.WriteAsync(JsonSerializer.Serialize(new
+        {
+            StatusCode = 504,
+            Message = "La solicitud ha excedido el tiempo máximo permitido.",
+            TraceId = System.Diagnostics.Activity.Current?.Id ?? context.TraceIdentifier,
+            Timestamp = DateTime.UtcNow
+        }));
+    }
+});
+
+// Habilitar Swagger en todos los entornos
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -130,14 +215,31 @@ if (shouldMigrate)
             {
                 var db = scope.ServiceProvider.GetRequiredService<ChatMessagesContext>();
                 Console.WriteLine($"Intentando conectar a la base de datos (intento {retryAttempt}/{maxRetryAttempts})...");
-                db.Database.OpenConnection();
+                
+                var connectionTimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                await db.Database.CanConnectAsync(connectionTimeoutCts.Token);
+                
                 Console.WriteLine("Conexión establecida con éxito.");
-                db.Database.CloseConnection();
                 
                 Console.WriteLine("Aplicando migraciones...");
-                db.Database.Migrate();
+                await db.Database.MigrateAsync(connectionTimeoutCts.Token);
                 Console.WriteLine("Database migrations applied successfully.");
                 break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine($"Timeout al conectar a la base de datos (intento {retryAttempt}/{maxRetryAttempts})");
+            
+            if (retryAttempt == maxRetryAttempts)
+            {
+                Console.WriteLine($"No se pudo conectar a la base de datos después de {maxRetryAttempts} intentos debido a timeouts.");
+                Console.WriteLine($"La aplicación continuará ejecutándose, pero las funciones que requieren base de datos podrían fallar.");
+            }
+            else
+            {
+                Console.WriteLine($"Reintentando en {delay.TotalSeconds} segundos...");
+                await Task.Delay(delay);
             }
         }
         catch (Exception ex)
@@ -152,7 +254,7 @@ if (shouldMigrate)
             else
             {
                 Console.WriteLine($"Reintentando en {delay.TotalSeconds} segundos...");
-                Thread.Sleep(delay);
+                await Task.Delay(delay);
             }
         }
     }
