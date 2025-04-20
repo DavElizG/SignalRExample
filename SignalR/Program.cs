@@ -22,8 +22,8 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 });
 
 // Configurar CORS con origen desde variable de entorno
-var corsOrigins = Environment.GetEnvironmentVariable("CORS_ORIGINS")?.Split(',') 
-    ?? new string[] { "http://localhost:5173" };
+var corsOrigins = Environment.GetEnvironmentVariable("CORS_ORIGINS")?.Split(',')
+    ?? new string[] { "http://localhost:5173", "https://chat-hub-liard.vercel.app" };
 
 builder.Services.AddCors(options =>
 {
