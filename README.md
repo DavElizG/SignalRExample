@@ -2,6 +2,14 @@
 
 Este proyecto es un ejemplo práctico de cómo utilizar **SignalR** en una aplicación para implementar comunicación en tiempo real entre clientes y servidores. Está desarrollado principalmente en **C#** y utiliza una configuración basada en **.NET** y un **Dockerfile** para contenerización.
 
+---
+
+## ⚠️ Límite de Mensajes
+
+Para optimizar el uso de memoria, el sistema implementa un límite de **100 mensajes**. Los mensajes más antiguos se eliminan automáticamente a medida que se agregan nuevos, garantizando que el sistema no consuma más memoria de la necesaria.
+
+---
+
 ## 🚀 Descripción
 
 **SignalRExample** demuestra cómo implementar funcionalidades en tiempo real, como notificaciones, actualizaciones de datos compartidos o chats en vivo, mediante SignalR. 
@@ -104,4 +112,3 @@ Accede a la aplicación desde tu navegador en `http://localhost:5000`.
 
 Una vez enviado, revisaremos tus cambios y te daremos feedback si es necesario. ¡Gracias por contribuir!
 
----
